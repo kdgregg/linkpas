@@ -21,4 +21,4 @@ COPY . .
 ENV PYTHONUNBUFFERED=1
 
 # Run the scraper
-CMD ["python", "scraper.py"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
