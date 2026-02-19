@@ -1,0 +1,27 @@
+requests
+beautifulsoup4
+selenium
+webdriver-manager
+python-telegram-bot
+schedule
+```
+
+(Add any other packages your scraper uses)
+
+## Step 3: Create .dockerignore
+
+Create a `.dockerignore` file to exclude unnecessary files:
+```
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+.git/
+.gitignore
+.env
+venv/
+*.log
