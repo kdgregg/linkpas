@@ -24,8 +24,8 @@ jobs:
  uses: docker/login-action@v3
  with:
  registry: ghcr.io
- username: ${{ github.actor }}
- password: ${{ secrets.GITHUB_TOKEN }}
+ username: '${{ github.actor }}'
+ password: '${{ secrets.GITHUB_TOKEN }}'
 
  - name: Build and push
  uses: docker/build-push-action@v6
@@ -34,5 +34,6 @@ jobs:
  file: ./Dockerfile
  push: true
  tags: |
- ghcr.io/kdgregg/job-scraper:latest
- ghcr.io/kdgregg/job-scraper:${{ github.sha }}
+ ghcr.io/kdgregg/linkpas:latest
+ ghcr.io/kdgregg/linkpas:${{ github.sha }}
+
