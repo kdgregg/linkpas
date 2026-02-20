@@ -83,16 +83,39 @@ def scrape_titan(limit: int = 20):
 
 @app.get("/jobs/titan")
 def jobs_titan(limit: int = Query(20, ge=1, le=100)):
-    jobs = scrape_titan(limit=limit)
-    return {"source": "titanplacementgroup", "count": len(jobs), "jobs": jobs}
-@app.get("/jobs/titan")
-def jobs_titan(limit: int = Query(20, ge=1, le=100)):
     try:
-        jobs = scrape_titan(limit=limit)
-        return {"source": "titanplacementgroup", "count": len(jobs), "jobs": jobs}
+        # Test 1: Can we fetch HTML?
+        url = "https://jobs.crelate.com/portal/titanplacementgroup"
+        html = fetch_html(url)
+        html_length = len(html)
+        
+        # Test 2: Can we parse it?
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        all_links = soup.find_all('a', href=True)
+        
+        # Test 3: Show what we found
+        sample_links = []
+        for a in all_links[:10]:
+            sample_links.append({
+                'href': a.get('href', '')[:100],
+                'text': a.get_text(strip=True)[:50]
+            })
+        
+        return {
+            "source": "titanplacementgroup",
+            "debug": "testing",
+            "html_length": html_length,
+            "total_links": len(all_links),
+            "sample_links": sample_links
+        }
+        
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
+        return {
+            "source": "titanplacementgroup", 
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
 # --- NPNow ---
 NP_NOW_URL = "https://www.npnow.com/current-openings/"
 NP_KEYWORDS = ["nurse practitioner", "physician assistant", "midwife", "pmhnp"]
