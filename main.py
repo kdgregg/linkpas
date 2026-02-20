@@ -24,58 +24,67 @@ def scrape_titan(limit: int = 20):
     from bs4 import BeautifulSoup
     from urllib.parse import urljoin
     
-    url = "https://jobs.crelate.com/portal/titanplacementgroup"
-    html = fetch_html(url)
-    soup = BeautifulSoup(html, "html.parser")
-    
-    jobs = []
-    seen_urls = set()
-    all_links = []  # DEBUG: collect all links
-    
-    # Look for all links on the page
-    for a_tag in soup.find_all('a', href=True):
-        href = a_tag.get('href', '').strip()
-        title = a_tag.get_text(strip=True)
+    try:
+        url = "https://jobs.crelate.com/portal/titanplacementgroup"
+        html = fetch_html(url)
+        soup = BeautifulSoup(html, "html.parser")
         
-        # DEBUG: Save all links to see what we're getting
-        if href and title:
-            all_links.append({'href': href, 'title': title[:50]})
+        jobs = []
+        seen_urls = set()
+        all_links = []
         
-        if not href or href in seen_urls:
-            continue
+        # Look for all links on the page
+        for a_tag in soup.find_all('a', href=True):
+            href = a_tag.get('href', '').strip()
+            title = a_tag.get_text(strip=True)
             
-        # Job links contain /job/ in the path
-        if '/job/' in href:
-            # Skip empty titles or very short navigation links
-            if not title or len(title) < 5:
+            if href and title:
+                all_links.append({'href': href[:100], 'title': title[:50]})
+            
+            if not href or href in seen_urls:
                 continue
                 
-            # Build full URL
-            full_url = urljoin(url, href)
-            
-            if full_url not in seen_urls:
-                seen_urls.add(full_url)
-                jobs.append({
-                    'title': title,
-                    'url': full_url,
-                    'location': None,
-                    'job_number': None,
-                    'debug_all_links': all_links[:10]  # Show first 10 links found
-                })
-                
-                if len(jobs) >= limit:
-                    break
-    
-    # If no jobs found, return debug info
-    if len(jobs) == 0:
+            # Job links contain /job/
+            if '/job/' in href:
+                if title and len(title) >= 5:
+                    full_url = urljoin(url, href)
+                    
+                    if full_url not in seen_urls:
+                        seen_urls.add(full_url)
+                        jobs.append({
+                            'title': title,
+                            'url': full_url,
+                            'location': None,
+                            'job_number': None
+                        })
+                        
+                        if len(jobs) >= limit:
+                            break
+        
+        # Return debug info if no jobs found
+        if len(jobs) == 0:
+            return [{
+                'title': 'DEBUG - No jobs found',
+                'url': 'none',
+                'total_links_found': len(all_links),
+                'sample_links': all_links[:20]
+            }]
+        
+        return jobs
+        
+    except Exception as e:
+        # Return error details
         return [{
-            'title': 'DEBUG - No jobs found',
+            'title': 'ERROR',
             'url': 'none',
-            'debug_total_links': len(all_links),
-            'debug_sample_links': all_links[:20]
+            'error': str(e),
+            'error_type': type(e).__name__
         }]
-    
-    return jobs
+
+@app.get("/jobs/titan")
+def jobs_titan(limit: int = Query(20, ge=1, le=100)):
+    jobs = scrape_titan(limit=limit)
+    return {"source": "titanplacementgroup", "count": len(jobs), "jobs": jobs}
 @app.get("/jobs/titan")
 def jobs_titan(limit: int = Query(20, ge=1, le=100)):
     try:
