@@ -38,6 +38,7 @@ def root():
             "titan_jobs": "/jobs/titan",
             "npnow_jobs": "/jobs/npnow",
             "all_jobs": "/jobs/all",
+            "debug_job_detail": "/debug/job-detail",
             "health": "/health",
             "docs": "/docs"
         }
@@ -131,70 +132,8 @@ def jobs_all(
         "jobs": all_jobs
     }
 
+
 @app.get("/debug/job-detail")
 def debug_job_detail(url: str = Query(..., description="Job detail URL to inspect")):
     """Debug endpoint to see what HTML is on a job detail page"""
-    from utils.selenium_helper import fetch_html_selenium
-    from bs4 import BeautifulSoup
-    
-    try:
-        html = fetch_html_selenium(url, wait_time=10)
-        soup = BeautifulSoup(html, "html.parser")
-        
-        # Find all div, section, article elements with class or id attributes
-        elements_with_classes = []
-        for tag in soup.find_all(['div', 'section', 'article', 'span', 'p', 'h1', 'h2', 'h3']):
-            if tag.get('class') or tag.get('id'):
-                text_preview = tag.get_text(strip=True)[:100]
-                if text_preview:  # Only include if there's text
-                    elements_with_classes.append({
-                        'tag': tag.name,
-                        'class': ' '.join(tag.get('class', [])),
-                        'id': tag.get('id'),
-                        'text_preview': text_preview
-                    })
-        
-        return {
-            "url": url,
-            "html_length": len(html),
-            "page_title": soup.title.string if soup.title else None,
-            "elements_count": len(elements_with_classes),
-            "elements_with_classes": elements_with_classes[:100],  # First 100 elements
-            "all_text_preview": soup.get_text(strip=True)[:2000]  # First 2000 chars of text
-        }
-    except Exception as e:
-        import traceback
-        return {
-            "error": str(e),
-            "error_type": type(e).__name__,
-            "traceback": traceback.format_exc()
-        }
-
-@app.get("/health")
-def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "scrapers": ["titan", "npnow"],
-        "features": {
-            "detail_scraping": ["titan"]
-        }
-    }
-```
-
-4. **Commit changes**
-5. **Wait for rebuild**
-6. **Restart container**
-7. **Try again:**
-```
-
-@app.get("/health")
-def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "scrapers": ["titan", "npnow"],
-        "features": {
-            "detail_scraping": ["titan"]
-        }
-    }
+    from utils.selenium_helper im
