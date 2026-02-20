@@ -19,7 +19,7 @@ def fetch_json(url: str) -> dict:
 
 def scrape_titan(limit: int = 20):
     """
-    Scrape Titan jobs from their HTML page since the JSON API doesn't work.
+    Scrape Titan jobs from their HTML page.
     """
     from bs4 import BeautifulSoup
     from urllib.parse import urljoin
@@ -29,28 +29,40 @@ def scrape_titan(limit: int = 20):
     soup = BeautifulSoup(html, "html.parser")
     
     jobs = []
+    seen_urls = set()
     
-    for job_elem in soup.find_all('a', href=True):
-        href = job_elem.get('href', '')
-        if '/job/' in href:
-            title = job_elem.get_text(strip=True)
+    # Look for all links on the page
+    for a_tag in soup.find_all('a', href=True):
+        href = a_tag.get('href', '').strip()
+        
+        # Check if this looks like a job posting link
+        if not href or href in seen_urls:
+            continue
+            
+        # Job links contain /job/ in the path
+        if '/job/' in href or '/portal/titanplacementgroup/job/' in href:
+            title = a_tag.get_text(strip=True)
+            
+            # Skip empty titles or navigation links
+            if not title or len(title) < 5:
+                continue
+                
+            # Build full URL
             full_url = urljoin(url, href)
             
-            # Filter by keywords
-            if any(k in title.lower() for k in JOB_KEYWORDS):
-                if full_url not in [j['url'] for j in jobs]:
-                    jobs.append({
-                        'title': title,
-                        'url': full_url,
-                        'location': None,
-                        'job_number': None
-                    })
-                    
-                    if len(jobs) >= limit:
-                        break
+            if full_url not in seen_urls:
+                seen_urls.add(full_url)
+                jobs.append({
+                    'title': title,
+                    'url': full_url,
+                    'location': None,
+                    'job_number': None
+                })
+                
+                if len(jobs) >= limit:
+                    break
     
     return jobs
-
 @app.get("/jobs/titan")
 def jobs_titan(limit: int = Query(20, ge=1, le=100)):
     try:
