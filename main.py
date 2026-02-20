@@ -33,18 +33,45 @@ def fetch_html_selenium(url: str) -> str:
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
+    options.add_argument('--window-size=1920,1080')
     
     driver = webdriver.Chrome(options=options)
     
     try:
         driver.get(url)
-        # Wait for job listings to load
-        time.sleep(5)  # Give JavaScript time to render
+        
+        # Wait longer for content to load
+        time.sleep(10)
+        
+        # Try to wait for specific elements
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "a"))
+            )
+        except:
+            pass  # Continue even if wait times out
+        
         html = driver.page_source
-        return html
+        
+        # Also check if there are iframes
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        iframe_contents = []
+        
+        for iframe in iframes:
+            try:
+                driver.switch_to.frame(iframe)
+                iframe_contents.append(driver.page_source)
+                driver.switch_to.default_content()
+            except:
+                pass
+        
+        # Combine main page HTML with iframe contents
+        full_html = html + "\n".join(iframe_contents)
+        
+        return full_html
+        
     finally:
         driver.quit()
-
 # === TITAN SCRAPER ===
 
 def scrape_titan(limit: int = 20):
@@ -167,6 +194,11 @@ def debug_titan():
         
         all_links = soup.find_all('a', href=True)
         
+        # Look for any text that might be job titles
+        all_text = soup.get_text()
+        has_fnp = "family nurse practitioner" in all_text.lower()
+        has_job_keywords = any(keyword in all_text.lower() for keyword in ["practitioner", "physician", "nurse"])
+        
         link_samples = []
         for a in all_links[:30]:
             href = a.get('href', '')
@@ -181,10 +213,15 @@ def debug_titan():
             "html_length": len(html),
             "total_links_found": len(all_links),
             "links_with_job": len([a for a in all_links if '/job/' in a.get('href', '')]),
-            "sample_links": link_samples
+            "has_job_keywords_in_text": has_job_keywords,
+            "has_fnp_in_text": has_fnp,
+            "sample_links": link_samples,
+            "html_preview": html[:500]  # First 500 chars of HTML
         }
     except Exception as e:
+        import traceback
         return {
             "error": str(e),
-            "error_type": type(e).__name__
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
         }
