@@ -136,3 +136,33 @@ def jobs_npnow(limit: int = Query(20, ge=1, le=100)):
         return {"source": "npnow", "count": len(jobs), "jobs": jobs}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+@app.get("/debug/titan")
+def debug_titan():
+    try:
+        url = "https://jobs.crelate.com/portal/titanplacementgroup"
+        html = fetch_html(url)
+        soup = BeautifulSoup(html, "html.parser")
+        
+        all_links = soup.find_all('a', href=True)
+        
+        link_samples = []
+        for a in all_links[:30]:  # Show first 30 links
+            href = a.get('href', '')
+            text = a.get_text(strip=True)
+            link_samples.append({
+                'href': href[:150],
+                'text': text[:100],
+                'has_job_in_href': '/job/' in href
+            })
+        
+        return {
+            "html_length": len(html),
+            "total_links_found": len(all_links),
+            "links_with_job": len([a for a in all_links if '/job/' in a.get('href', '')]),
+            "sample_links": link_samples
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
