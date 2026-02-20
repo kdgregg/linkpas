@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 app = FastAPI(title="Job Scraper API")
 
@@ -8,22 +10,26 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; JobScraper/1.0; +http://example.com/bot)"
 }
 
-# --- Titan (JSON API) ---
-TITAN_API = "https://jobs.crelate.com/portal/api/postings/titanplacementgroup"
 JOB_KEYWORDS = ["nurse practitioner", "physician assistant", "midwife", "pmhnp"]
+
+# === HELPER FUNCTIONS (MUST BE DEFINED FIRST) ===
+
+def fetch_html(url: str) -> str:
+    resp = requests.get(url, timeout=20, headers=HEADERS)
+    resp.raise_for_status()
+    return resp.text
 
 def fetch_json(url: str) -> dict:
     resp = requests.get(url, timeout=20, headers=HEADERS)
     resp.raise_for_status()
     return resp.json()
 
+# === TITAN SCRAPER ===
+
 def scrape_titan(limit: int = 20):
     """
     Scrape Titan jobs from their HTML page.
     """
-    from bs4 import BeautifulSoup
-    from urllib.parse import urljoin
-    
     try:
         url = "https://jobs.crelate.com/portal/titanplacementgroup"
         html = fetch_html(url)
@@ -31,15 +37,11 @@ def scrape_titan(limit: int = 20):
         
         jobs = []
         seen_urls = set()
-        all_links = []
         
         # Look for all links on the page
         for a_tag in soup.find_all('a', href=True):
             href = a_tag.get('href', '').strip()
             title = a_tag.get_text(strip=True)
-            
-            if href and title:
-                all_links.append({'href': href[:100], 'title': title[:50]})
             
             if not href or href in seen_urls:
                 continue
@@ -61,74 +63,25 @@ def scrape_titan(limit: int = 20):
                         if len(jobs) >= limit:
                             break
         
-        # Return debug info if no jobs found
-        if len(jobs) == 0:
-            return [{
-                'title': 'DEBUG - No jobs found',
-                'url': 'none',
-                'total_links_found': len(all_links),
-                'sample_links': all_links[:20]
-            }]
-        
         return jobs
         
     except Exception as e:
-        # Return error details
-        return [{
-            'title': 'ERROR',
-            'url': 'none',
-            'error': str(e),
-            'error_type': type(e).__name__
-        }]
+        return []
 
 @app.get("/jobs/titan")
 def jobs_titan(limit: int = Query(20, ge=1, le=100)):
     try:
-        # Test 1: Can we fetch HTML?
-        url = "https://jobs.crelate.com/portal/titanplacementgroup"
-        html = fetch_html(url)
-        html_length = len(html)
-        
-        # Test 2: Can we parse it?
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, "html.parser")
-        all_links = soup.find_all('a', href=True)
-        
-        # Test 3: Show what we found
-        sample_links = []
-        for a in all_links[:10]:
-            sample_links.append({
-                'href': a.get('href', '')[:100],
-                'text': a.get_text(strip=True)[:50]
-            })
-        
-        return {
-            "source": "titanplacementgroup",
-            "debug": "testing",
-            "html_length": html_length,
-            "total_links": len(all_links),
-            "sample_links": sample_links
-        }
-        
+        jobs = scrape_titan(limit=limit)
+        return {"source": "titanplacementgroup", "count": len(jobs), "jobs": jobs}
     except Exception as e:
-        return {
-            "source": "titanplacementgroup", 
-            "error": str(e),
-            "error_type": type(e).__name__
-        }
-# --- NPNow ---
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+# === NPNOW SCRAPER ===
+
 NP_NOW_URL = "https://www.npnow.com/current-openings/"
 NP_KEYWORDS = ["nurse practitioner", "physician assistant", "midwife", "pmhnp"]
 
-def fetch_html(url: str) -> str:
-    resp = requests.get(url, timeout=20, headers=HEADERS)
-    resp.raise_for_status()
-    return resp.text
-
 def scrape_npnow(limit: int = 20):
-    from bs4 import BeautifulSoup
-    from urllib.parse import urljoin
-    
     html = fetch_html(NP_NOW_URL)
     soup = BeautifulSoup(html, "html.parser")
     seen = set()
