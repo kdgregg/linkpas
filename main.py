@@ -12,27 +12,48 @@ HEADERS = {
 
 JOB_KEYWORDS = ["nurse practitioner", "physician assistant", "midwife", "pmhnp"]
 
-# === HELPER FUNCTIONS (MUST BE DEFINED FIRST) ===
+# === HELPER FUNCTIONS ===
 
 def fetch_html(url: str) -> str:
     resp = requests.get(url, timeout=20, headers=HEADERS)
     resp.raise_for_status()
     return resp.text
 
-def fetch_json(url: str) -> dict:
-    resp = requests.get(url, timeout=20, headers=HEADERS)
-    resp.raise_for_status()
-    return resp.json()
+def fetch_html_selenium(url: str) -> str:
+    """Fetch HTML using Selenium for JavaScript-rendered pages"""
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    import time
+    
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-gpu')
+    
+    driver = webdriver.Chrome(options=options)
+    
+    try:
+        driver.get(url)
+        # Wait for job listings to load
+        time.sleep(5)  # Give JavaScript time to render
+        html = driver.page_source
+        return html
+    finally:
+        driver.quit()
 
 # === TITAN SCRAPER ===
 
 def scrape_titan(limit: int = 20):
     """
-    Scrape Titan jobs from their HTML page.
+    Scrape Titan jobs using Selenium (JavaScript-rendered page)
     """
     try:
         url = "https://jobs.crelate.com/portal/titanplacementgroup"
-        html = fetch_html(url)
+        html = fetch_html_selenium(url)
         soup = BeautifulSoup(html, "html.parser")
         
         jobs = []
@@ -66,7 +87,7 @@ def scrape_titan(limit: int = 20):
         return jobs
         
     except Exception as e:
-        return []
+        return [{"error": str(e), "error_type": type(e).__name__}]
 
 @app.get("/jobs/titan")
 def jobs_titan(limit: int = Query(20, ge=1, le=100)):
@@ -136,17 +157,18 @@ def jobs_npnow(limit: int = Query(20, ge=1, le=100)):
         return {"source": "npnow", "count": len(jobs), "jobs": jobs}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
 @app.get("/debug/titan")
 def debug_titan():
     try:
         url = "https://jobs.crelate.com/portal/titanplacementgroup"
-        html = fetch_html(url)
+        html = fetch_html_selenium(url)
         soup = BeautifulSoup(html, "html.parser")
         
         all_links = soup.find_all('a', href=True)
         
         link_samples = []
-        for a in all_links[:30]:  # Show first 30 links
+        for a in all_links[:30]:
             href = a.get('href', '')
             text = a.get_text(strip=True)
             link_samples.append({
