@@ -143,33 +143,49 @@ def debug_job_detail(url: str = Query(..., description="Job detail URL to inspec
         
         # Find all div, section, article elements with class or id attributes
         elements_with_classes = []
-        for tag in soup.find_all(['div', 'section', 'article', 'span', 'p']):
+        for tag in soup.find_all(['div', 'section', 'article', 'span', 'p', 'h1', 'h2', 'h3']):
             if tag.get('class') or tag.get('id'):
                 text_preview = tag.get_text(strip=True)[:100]
-                elements_with_classes.append({
-                    'tag': tag.name,
-                    'class': tag.get('class'),
-                    'id': tag.get('id'),
-                    'text_preview': text_preview
-                })
+                if text_preview:  # Only include if there's text
+                    elements_with_classes.append({
+                        'tag': tag.name,
+                        'class': ' '.join(tag.get('class', [])),
+                        'id': tag.get('id'),
+                        'text_preview': text_preview
+                    })
         
         return {
             "url": url,
             "html_length": len(html),
             "page_title": soup.title.string if soup.title else None,
-            "elements_with_classes": elements_with_classes[:50],  # First 50 elements
-            "all_text_preview": soup.get_text()[:1000]  # First 1000 chars of text
+            "elements_count": len(elements_with_classes),
+            "elements_with_classes": elements_with_classes[:100],  # First 100 elements
+            "all_text_preview": soup.get_text(strip=True)[:2000]  # First 2000 chars of text
         }
     except Exception as e:
-        return {"error": str(e), "error_type": type(e).__name__}
+        import traceback
+        return {
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "scrapers": ["titan", "npnow"],
+        "features": {
+            "detail_scraping": ["titan"]
+        }
+    }
 ```
 
-**Then:**
-
-1. **Commit the change**
-2. **Wait for rebuild**
-3. **Restart Hostinger container**
-4. **Test this URL:**
+4. **Commit changes**
+5. **Wait for rebuild**
+6. **Restart container**
+7. **Try again:**
 ```
 http://76.13.98.151:8000/debug/job-detail?url=https://jobs.crelate.com/portal/titanplacementgroup/job/95z7txbikcz3pk91o3bwet4xor
 @app.get("/health")
