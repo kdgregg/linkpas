@@ -3,14 +3,13 @@ from fastapi.responses import JSONResponse
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+import time
 
 app = FastAPI(title="Job Scraper API")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; JobScraper/1.0; +http://example.com/bot)"
 }
-
-JOB_KEYWORDS = ["nurse practitioner", "physician assistant", "midwife", "pmhnp"]
 
 # === HELPER FUNCTIONS ===
 
@@ -19,97 +18,139 @@ def fetch_html(url: str) -> str:
     resp.raise_for_status()
     return resp.text
 
-def fetch_html_selenium(url: str) -> str:
+def fetch_html_selenium(url: str, wait_time: int = 15) -> str:
     """Fetch HTML using Selenium for JavaScript-rendered pages"""
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-    import time
     
     options = Options()
-    options.add_argument('--headless')
+    options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
     options.add_argument('--window-size=1920,1080')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     
     driver = webdriver.Chrome(options=options)
+    driver.set_page_load_timeout(30)
     
     try:
         driver.get(url)
         
-        # Wait longer for content to load
-        time.sleep(10)
+        # Wait for page to load
+        time.sleep(wait_time)
         
-        # Try to wait for specific elements
+        # Try multiple wait strategies
         try:
-            WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.TAG_NAME, "a"))
+            # Wait for any anchor tags to appear
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/job/']"))
             )
         except:
-            pass  # Continue even if wait times out
+            # If specific wait fails, try waiting for general content
+            try:
+                WebDriverWait(driver, 20).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "main"))
+                )
+            except:
+                pass  # Continue anyway
+        
+        # Additional wait for dynamic content
+        time.sleep(5)
+        
+        # Scroll to load lazy-loaded content
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(2)
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(1)
         
         html = driver.page_source
-        
-        # Also check if there are iframes
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        iframe_contents = []
-        
-        for iframe in iframes:
-            try:
-                driver.switch_to.frame(iframe)
-                iframe_contents.append(driver.page_source)
-                driver.switch_to.default_content()
-            except:
-                pass
-        
-        # Combine main page HTML with iframe contents
-        full_html = html + "\n".join(iframe_contents)
-        
-        return full_html
+        return html
         
     finally:
         driver.quit()
+
 # === TITAN SCRAPER ===
 
 def scrape_titan(limit: int = 20):
     """
-    Scrape Titan jobs using Selenium (JavaScript-rendered page)
+    Scrape Titan jobs using Selenium
     """
     try:
         url = "https://jobs.crelate.com/portal/titanplacementgroup"
-        html = fetch_html_selenium(url)
+        html = fetch_html_selenium(url, wait_time=15)
         soup = BeautifulSoup(html, "html.parser")
         
         jobs = []
         seen_urls = set()
         
-        # Look for all links on the page
-        for a_tag in soup.find_all('a', href=True):
+        # Strategy 1: Look for links with /job/ in href
+        job_links = soup.find_all('a', href=lambda x: x and '/job/' in x)
+        
+        for a_tag in job_links:
             href = a_tag.get('href', '').strip()
             title = a_tag.get_text(strip=True)
             
             if not href or href in seen_urls:
                 continue
+            
+            # Skip navigation links
+            if len(title) < 5 or title.lower() in ['home', 'about', 'contact', 'apply', 'back']:
+                continue
                 
-            # Job links contain /job/
-            if '/job/' in href:
-                if title and len(title) >= 5:
-                    full_url = urljoin(url, href)
-                    
-                    if full_url not in seen_urls:
-                        seen_urls.add(full_url)
-                        jobs.append({
-                            'title': title,
-                            'url': full_url,
-                            'location': None,
-                            'job_number': None
-                        })
-                        
-                        if len(jobs) >= limit:
-                            break
+            full_url = urljoin(url, href)
+            
+            if full_url not in seen_urls:
+                seen_urls.add(full_url)
+                
+                # Try to extract job number from URL
+                job_number = None
+                if '/job/' in href:
+                    job_number = href.split('/job/')[-1].split('?')[0].split('#')[0]
+                
+                jobs.append({
+                    'title': title,
+                    'url': full_url,
+                    'location': None,
+                    'job_number': job_number
+                })
+                
+                if len(jobs) >= limit:
+                    break
+        
+        # Strategy 2: If no jobs found, look for any text that might be job titles
+        if len(jobs) == 0:
+            # Look for divs or sections that might contain job listings
+            for elem in soup.find_all(['div', 'article', 'section']):
+                text = elem.get_text(strip=True)
+                # Look for healthcare job titles
+                if any(keyword in text.lower() for keyword in [
+                    'practitioner', 'physician', 'nurse', 'therapist', 
+                    'dentist', 'hygienist', 'medical', 'doctor'
+                ]):
+                    # Find links within this element
+                    links = elem.find_all('a', href=True)
+                    for link in links:
+                        href = link.get('href', '')
+                        if '/job/' in href or '/portal/' in href:
+                            title = link.get_text(strip=True)
+                            if title and len(title) >= 5:
+                                full_url = urljoin(url, href)
+                                if full_url not in seen_urls:
+                                    seen_urls.add(full_url)
+                                    jobs.append({
+                                        'title': title,
+                                        'url': full_url,
+                                        'location': None,
+                                        'job_number': None
+                                    })
+                                    if len(jobs) >= limit:
+                                        break
         
         return jobs
         
@@ -127,7 +168,6 @@ def jobs_titan(limit: int = Query(20, ge=1, le=100)):
 # === NPNOW SCRAPER ===
 
 NP_NOW_URL = "https://www.npnow.com/current-openings/"
-NP_KEYWORDS = ["nurse practitioner", "physician assistant", "midwife", "pmhnp"]
 
 def scrape_npnow(limit: int = 20):
     html = fetch_html(NP_NOW_URL)
@@ -164,18 +204,10 @@ def scrape_npnow(limit: int = 20):
         seen.add(url)
         jobs.append({"title": text, "url": url})
         
-        if len(jobs) >= max(100, limit * 5):
+        if len(jobs) >= limit:
             break
     
-    out = []
-    for j in jobs:
-        t = j["title"].lower()
-        if any(k in t for k in NP_KEYWORDS):
-            out.append(j)
-        if len(out) >= limit:
-            break
-            
-    return out
+    return jobs
 
 @app.get("/jobs/npnow")
 def jobs_npnow(limit: int = Query(20, ge=1, le=100)):
@@ -185,22 +217,21 @@ def jobs_npnow(limit: int = Query(20, ge=1, le=100)):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+# === DEBUG ENDPOINT ===
+
 @app.get("/debug/titan")
 def debug_titan():
     try:
         url = "https://jobs.crelate.com/portal/titanplacementgroup"
-        html = fetch_html_selenium(url)
+        html = fetch_html_selenium(url, wait_time=15)
         soup = BeautifulSoup(html, "html.parser")
         
         all_links = soup.find_all('a', href=True)
+        job_links = [a for a in all_links if '/job/' in a.get('href', '')]
         
-        # Look for any text that might be job titles
-        all_text = soup.get_text()
-        has_fnp = "family nurse practitioner" in all_text.lower()
-        has_job_keywords = any(keyword in all_text.lower() for keyword in ["practitioner", "physician", "nurse"])
-        
+        # Sample links
         link_samples = []
-        for a in all_links[:30]:
+        for a in all_links[:50]:
             href = a.get('href', '')
             text = a.get_text(strip=True)
             link_samples.append({
@@ -209,14 +240,20 @@ def debug_titan():
                 'has_job_in_href': '/job/' in href
             })
         
+        # Check for job-related text
+        full_text = soup.get_text()
+        has_healthcare_keywords = any(kw in full_text.lower() for kw in [
+            'practitioner', 'physician', 'nurse', 'dentist', 'therapist'
+        ])
+        
         return {
             "html_length": len(html),
             "total_links_found": len(all_links),
-            "links_with_job": len([a for a in all_links if '/job/' in a.get('href', '')]),
-            "has_job_keywords_in_text": has_job_keywords,
-            "has_fnp_in_text": has_fnp,
+            "links_with_job": len(job_links),
+            "has_healthcare_keywords": has_healthcare_keywords,
             "sample_links": link_samples,
-            "html_preview": html[:500]  # First 500 chars of HTML
+            "page_title": soup.title.string if soup.title else "No title",
+            "html_snippet": html[1000:2000] if len(html) > 2000 else html
         }
     except Exception as e:
         import traceback
@@ -225,3 +262,15 @@ def debug_titan():
             "error_type": type(e).__name__,
             "traceback": traceback.format_exc()
         }
+
+@app.get("/")
+def root():
+    return {
+        "message": "Job Scraper API",
+        "endpoints": {
+            "titan_jobs": "/jobs/titan",
+            "npnow_jobs": "/jobs/npnow",
+            "debug_titan": "/debug/titan",
+            "docs": "/docs"
+        }
+    }
