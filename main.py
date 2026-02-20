@@ -131,7 +131,47 @@ def jobs_all(
         "jobs": all_jobs
     }
 
+@app.get("/debug/job-detail")
+def debug_job_detail(url: str = Query(..., description="Job detail URL to inspect")):
+    """Debug endpoint to see what HTML is on a job detail page"""
+    from utils.selenium_helper import fetch_html_selenium
+    from bs4 import BeautifulSoup
+    
+    try:
+        html = fetch_html_selenium(url, wait_time=10)
+        soup = BeautifulSoup(html, "html.parser")
+        
+        # Find all div, section, article elements with class or id attributes
+        elements_with_classes = []
+        for tag in soup.find_all(['div', 'section', 'article', 'span', 'p']):
+            if tag.get('class') or tag.get('id'):
+                text_preview = tag.get_text(strip=True)[:100]
+                elements_with_classes.append({
+                    'tag': tag.name,
+                    'class': tag.get('class'),
+                    'id': tag.get('id'),
+                    'text_preview': text_preview
+                })
+        
+        return {
+            "url": url,
+            "html_length": len(html),
+            "page_title": soup.title.string if soup.title else None,
+            "elements_with_classes": elements_with_classes[:50],  # First 50 elements
+            "all_text_preview": soup.get_text()[:1000]  # First 1000 chars of text
+        }
+    except Exception as e:
+        return {"error": str(e), "error_type": type(e).__name__}
+```
 
+**Then:**
+
+1. **Commit the change**
+2. **Wait for rebuild**
+3. **Restart Hostinger container**
+4. **Test this URL:**
+```
+http://76.13.98.151:8000/debug/job-detail?url=https://jobs.crelate.com/portal/titanplacementgroup/job/95z7txbikcz3pk91o3bwet4xor
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
