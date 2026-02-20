@@ -187,7 +187,7 @@ def health_check():
 6. **Restart container**
 7. **Try again:**
 ```
-http://76.13.98.151:8000/debug/job-detail?url=https://jobs.crelate.com/portal/titanplacementgroup/job/95z7txbikcz3pk91o3bwet4xor
+
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
