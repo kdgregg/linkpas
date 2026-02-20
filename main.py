@@ -30,20 +30,23 @@ def scrape_titan(limit: int = 20):
     
     jobs = []
     seen_urls = set()
+    all_links = []  # DEBUG: collect all links
     
     # Look for all links on the page
     for a_tag in soup.find_all('a', href=True):
         href = a_tag.get('href', '').strip()
+        title = a_tag.get_text(strip=True)
         
-        # Check if this looks like a job posting link
+        # DEBUG: Save all links to see what we're getting
+        if href and title:
+            all_links.append({'href': href, 'title': title[:50]})
+        
         if not href or href in seen_urls:
             continue
             
         # Job links contain /job/ in the path
-        if '/job/' in href or '/portal/titanplacementgroup/job/' in href:
-            title = a_tag.get_text(strip=True)
-            
-            # Skip empty titles or navigation links
+        if '/job/' in href:
+            # Skip empty titles or very short navigation links
             if not title or len(title) < 5:
                 continue
                 
@@ -56,11 +59,21 @@ def scrape_titan(limit: int = 20):
                     'title': title,
                     'url': full_url,
                     'location': None,
-                    'job_number': None
+                    'job_number': None,
+                    'debug_all_links': all_links[:10]  # Show first 10 links found
                 })
                 
                 if len(jobs) >= limit:
                     break
+    
+    # If no jobs found, return debug info
+    if len(jobs) == 0:
+        return [{
+            'title': 'DEBUG - No jobs found',
+            'url': 'none',
+            'debug_total_links': len(all_links),
+            'debug_sample_links': all_links[:20]
+        }]
     
     return jobs
 @app.get("/jobs/titan")
